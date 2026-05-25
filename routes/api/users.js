@@ -2,6 +2,11 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Joi = require("joi");
+const gravatar = require("gravatar");
+const multer = require("multer");
+const { Jimp } = require("jimp");
+const path = require("path");
+const fs = require("fs/promises");
 
 const User = require("../../models/user");
 const auth = require("../../middlewares/auth");
@@ -9,6 +14,11 @@ const auth = require("../../middlewares/auth");
 const { JWT_SECRET } = process.env;
 
 const router = express.Router();
+
+const TMP_DIR = path.join(__dirname, "../../tmp");
+const AVATARS_DIR = path.join(__dirname, "../../public/avatars");
+
+const upload = multer({ dest: TMP_DIR });
 
 const signupSchema = Joi.object({
   email: Joi.string().trim().email().required(),
@@ -40,6 +50,7 @@ router.post("/signup", async (req, res, next) => {
     const created = await User.create({
       email: value.email,
       password: passwordHash,
+      avatarURL: gravatar.url(value.email),
     });
 
     res.status(201).json({
@@ -102,6 +113,41 @@ router.get("/current", auth, async (req, res) => {
     email: req.user.email,
     subscription: req.user.subscription,
   });
+});
+
+router.patch("/avatars", auth, upload.single("avatar"), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Avatar file is missing" });
+    }
+
+    const { path: tmpPath } = req.file;
+    const filename = `${req.user._id}.png`;
+    const resultPath = path.join(AVATARS_DIR, filename);
+
+    const image = await Jimp.read(tmpPath);
+    image.resize({ w: 250, h: 250 });
+    await image.write(resultPath);
+
+    await fs.unlink(tmpPath);
+
+    const previousAvatar = req.user.avatarURL;
+    if (previousAvatar && previousAvatar.startsWith("/avatars/")) {
+      const previousPath = path.join(
+        __dirname,
+        "../../public",
+        previousAvatar
+      );
+      await fs.unlink(previousPath).catch(() => {});
+    }
+
+    req.user.avatarURL = `/avatars/${filename}`;
+    await req.user.save();
+
+    res.status(200).json({ avatarURL: req.user.avatarURL });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Optional task: update subscription
