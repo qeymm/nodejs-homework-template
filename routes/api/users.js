@@ -20,6 +20,26 @@ const AVATARS_DIR = path.join(__dirname, "../../public/avatars");
 
 const upload = multer({ dest: TMP_DIR });
 
+function uploadAvatar(req, res, next) {
+  upload.single("avatar")(req, res, (err) => {
+    if (!err) {
+      return next();
+    }
+    if (err instanceof multer.MulterError) {
+      const messages = {
+        MISSING_FIELD_NAME:
+          'Form field name is missing. In Postman form-data use only one row: key "avatar", type File.',
+        LIMIT_UNEXPECTED_FILE:
+          'Unexpected file field. Use form-data key "avatar" (type File).',
+      };
+      return res
+        .status(400)
+        .json({ message: messages[err.code] || err.message });
+    }
+    return next(err);
+  });
+}
+
 const signupSchema = Joi.object({
   email: Joi.string().trim().email().required(),
   password: Joi.string().min(6).required(),
@@ -115,7 +135,7 @@ router.get("/current", auth, async (req, res) => {
   });
 });
 
-router.patch("/avatars", auth, upload.single("avatar"), async (req, res, next) => {
+router.patch("/avatars", auth, uploadAvatar, async (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "Avatar file is missing" });
