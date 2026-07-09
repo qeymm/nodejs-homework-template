@@ -153,9 +153,10 @@ router.get("/verify/:verificationToken", async (req, res, next) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    user.verificationToken = null;
-    user.verify = true;
-    await user.save();
+    await User.findByIdAndUpdate(user._id, {
+      verificationToken: null,
+      verify: true,
+    });
 
     res.status(200).json({ message: "Verification successful" });
   } catch (err) {
