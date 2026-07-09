@@ -7,11 +7,13 @@ const multer = require("multer");
 const { Jimp } = require("jimp");
 const path = require("path");
 const fs = require("fs/promises");
+const { v4: uuidv4 } = require("uuid");
 
 const User = require("../../models/user");
 const auth = require("../../middlewares/auth");
+const sendEmail = require("../../helpers/sendEmail");
 
-const { JWT_SECRET } = process.env;
+const { JWT_SECRET, BASE_URL = "http://localhost:3000" } = process.env;
 
 const router = express.Router();
 
@@ -54,6 +56,21 @@ const subscriptionSchema = Joi.object({
   subscription: Joi.string().valid("starter", "pro", "business").required(),
 });
 
+const resendVerifySchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+});
+
+async function sendVerificationEmail(email, verificationToken) {
+  const verifyURL = `${BASE_URL}/users/verify/${verificationToken}`;
+
+  await sendEmail({
+    to: email,
+    subject: "Verify email",
+    html: `<p>Please confirm your email. <a href="${verifyURL}">Verify email</a></p>`,
+    text: `Please confirm your email: ${verifyURL}`,
+  });
+}
+
 router.post("/signup", async (req, res, next) => {
   try {
     const { error, value } = signupSchema.validate(req.body);
@@ -67,11 +84,15 @@ router.post("/signup", async (req, res, next) => {
     }
 
     const passwordHash = await bcrypt.hash(value.password, 10);
+    const verificationToken = uuidv4();
     const created = await User.create({
       email: value.email,
       password: passwordHash,
       avatarURL: gravatar.url(value.email),
+      verificationToken,
     });
+
+    await sendVerificationEmail(created.email, verificationToken);
 
     res.status(201).json({
       user: {
@@ -101,6 +122,10 @@ router.post("/login", async (req, res, next) => {
       return res.status(401).json({ message: "Email or password is wrong" });
     }
 
+    if (!user.verify) {
+      return res.status(401).json({ message: "Email not verified" });
+    }
+
     if (!JWT_SECRET) {
       return res.status(500).json({ message: "JWT secret is not configured" });
     }
@@ -113,6 +138,63 @@ router.post("/login", async (req, res, next) => {
       token,
       user: { email: user.email, subscription: user.subscription },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/verify/:verificationToken", async (req, res, next) => {
+  try {
+    const user = await User.findOne({
+      verificationToken: req.params.verificationToken,
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.verificationToken = null;
+    user.verify = true;
+    await user.save();
+
+    res.status(200).json({ message: "Verification successful" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/verify", async (req, res, next) => {
+  try {
+    if (!req.body?.email) {
+      return res
+        .status(400)
+        .json({ message: "missing required field email" });
+    }
+
+    const { error, value } = resendVerifySchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    const user = await User.findOne({ email: value.email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.verify) {
+      return res
+        .status(400)
+        .json({ message: "Verification has already been passed" });
+    }
+
+    if (!user.verificationToken) {
+      user.verificationToken = uuidv4();
+      await user.save();
+    }
+
+    await sendVerificationEmail(user.email, user.verificationToken);
+
+    res.status(200).json({ message: "Verification email sent" });
   } catch (err) {
     next(err);
   }
@@ -153,11 +235,7 @@ router.patch("/avatars", auth, uploadAvatar, async (req, res, next) => {
 
     const previousAvatar = req.user.avatarURL;
     if (previousAvatar && previousAvatar.startsWith("/avatars/")) {
-      const previousPath = path.join(
-        __dirname,
-        "../../public",
-        previousAvatar
-      );
+      const previousPath = path.join(__dirname, "../../public", previousAvatar);
       await fs.unlink(previousPath).catch(() => {});
     }
 
@@ -170,7 +248,6 @@ router.patch("/avatars", auth, uploadAvatar, async (req, res, next) => {
   }
 });
 
-// Optional task: update subscription
 router.patch("/", auth, async (req, res, next) => {
   try {
     const { error, value } = subscriptionSchema.validate(req.body);
@@ -191,4 +268,3 @@ router.patch("/", auth, async (req, res, next) => {
 });
 
 module.exports = router;
-

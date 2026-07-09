@@ -25,10 +25,18 @@ const userSchema = new Schema(
     avatarURL: {
       type: String,
     },
+
+    verify: {
+      type: Boolean,
+      default: false,
+    },
+    verificationToken: {
+      type: String,
+      required: [true, "Verify token is required"],
+    },
   },
-  { versionKey: false, timestamps: true }
+  { versionKey: false, timestamps: true },
 );
 
 // NOTE: collection name must be singular: "user"
 module.exports = mongoose.model("user", userSchema);
-

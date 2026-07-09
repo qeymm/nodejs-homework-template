@@ -20,7 +20,8 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.23.0",
     "morgan": "1.10.0",
-    "multer": "^2.1.1"
+    "multer": "^2.1.1",
+    "uuid": "^8.3.2"
   },
   "devDependencies": {
     "eslint": "7.19.0",
@@ -29,6 +30,7 @@
     "eslint-plugin-import": "2.25.3",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "5.2.0",
+    "nodemailer": "^9.0.3",
     "nodemon": "2.0.15"
   }
 }
